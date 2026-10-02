@@ -1,0 +1,35 @@
+name: Discord notify
+description: >
+  Posts one line about a run (✅/❌, title, commit, link) to a Discord channel.
+  Does nothing when webhook-url is empty, so callers can ship it before the secret exists.
+
+inputs:
+  webhook-url:
+    description: A Discord channel webhook URL (without /github). Usually secrets.DISCORD_WEBHOOK_URL.
+    required: false
+    default: ''
+  status:
+    description: success, failure, cancelled or skipped (e.g. needs.<job>.result).
+    required: true
+  title:
+    description: What ran, e.g. "Backend deploy" or "Mobile → Play beta".
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        DISCORD_WEBHOOK_URL: ${{ inputs.webhook-url }}
+        STATUS: ${{ inputs.status }}
+        TITLE: ${{ inputs.title }}
+        COMMIT: ${{ github.event.head_commit.message }}
+        ACTOR: ${{ github.actor }}
+        RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      run: |
+        [ -n "$DISCORD_WEBHOOK_URL" ] || { echo "No Discord webhook URL; skipping."; exit 0; }
+        case "$STATUS" in success) ICON="✅";; cancelled|skipped) ICON="⚪";; *) ICON="❌";; esac
+        MSG=$(printf '%s **%s**: %s\n%s by %s\n%s' \
+          "$ICON" "$TITLE" "$STATUS" "$(printf '%s' "$COMMIT" | head -n1)" "$ACTOR" "$RUN_URL")
+        jq -n --arg c "$MSG" '{content: $c}' \
+          | curl -fsS -H 'Content-Type: application/json' -d @- "$DISCORD_WEBHOOK_URL"

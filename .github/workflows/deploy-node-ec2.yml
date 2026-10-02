@@ -1,0 +1,139 @@
+name: Deploy Node app to EC2 (pm2)
+
+# Copies the caller's source to an EC2 server over SSH, then on the server: npm ci, build,
+# optional migrations, pm2 reload (or first start), and a health check that fails the job
+# if the new version doesn't come up. Ends with a GitHub Release tagged <tag-prefix><run>.
+#
+# Server prerequisites: Node via nvm or system install, pm2, rsync, and the app's .env
+# already in ~/<app-dir>. .env*, node_modules, dist and .git there are never touched.
+#
+# Caller (the job needs contents: write for the release):
+#   deploy:
+#     needs: test
+#     permissions: { contents: write }
+#     uses: vamahatech/ci-shared/.github/workflows/deploy-node-ec2.yml@v1
+#     with: { app-dir: MyApp, pm2-name: myapp, migrate-script: db:migrate }
+#     secrets: inherit
+
+on:
+  workflow_call:
+    inputs:
+      app-dir:
+        description: Folder under the server user's home directory, e.g. ScanDukkan-Backend.
+        type: string
+        required: true
+      pm2-name:
+        description: The pm2 process name (`pm2 ls`). Reloaded if it exists, else started.
+        type: string
+        required: true
+      start-script:
+        description: npm script pm2 runs on first start.
+        type: string
+        default: start:prod
+      migrate-script:
+        description: npm script run after the build and before the reload. Empty to skip.
+        type: string
+        default: ''
+      health-path:
+        description: Path polled on localhost:<PORT from .env> after the reload. Empty to skip.
+        type: string
+        default: /health
+      environment:
+        description: GitHub environment the job runs in (holds the EC2_* secrets).
+        type: string
+        default: production
+      tag-prefix:
+        description: Release tag prefix; the tag is <prefix><run number>. Empty to skip the release.
+        type: string
+        default: deploy-
+    secrets:
+      EC2_HOST:
+        required: true
+      EC2_USER:
+        required: true
+      EC2_SSH_KEY:
+        required: true
+
+jobs:
+  deploy:
+    name: Deploy to EC2
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: ${{ inputs.environment }}
+    # Never cancel a deploy halfway through; queue the next one instead.
+    concurrency:
+      group: deploy-${{ github.repository }}-${{ inputs.environment }}
+      cancel-in-progress: false
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure SSH
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$EC2_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "$EC2_HOST" >> ~/.ssh/known_hosts
+
+      - name: Upload source
+        env:
+          TARGET: ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:~/${{ inputs.app-dir }}/
+        run: |
+          rsync -az --delete \
+            --exclude '.git/' --exclude 'node_modules/' --exclude 'dist/' --exclude '.env*' \
+            -e "ssh -i ~/.ssh/deploy_key" ./ "$TARGET"
+
+      - name: Install, build, migrate, reload
+        env:
+          TARGET: ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}
+          APP_DIR: ${{ inputs.app-dir }}
+          PM2_NAME: ${{ inputs.pm2-name }}
+          START_SCRIPT: ${{ inputs.start-script }}
+          MIGRATE_SCRIPT: ${{ inputs.migrate-script }}
+          HEALTH_PATH: ${{ inputs.health-path }}
+        run: |
+          cat > "$RUNNER_TEMP/remote.sh" <<'REMOTE'
+          set -eo pipefail
+          # nvm only loads in login shells; this runs over a non-interactive SSH session.
+          export NVM_DIR="$HOME/.nvm"
+          [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
+          set -u   # only now: nvm.sh reads unset variables
+          APP_DIR=$1 PM2_NAME=$2 START_SCRIPT=$3 MIGRATE_SCRIPT=$4 HEALTH_PATH=$5
+
+          cd "$HOME/$APP_DIR"
+          npm ci    # dev dependencies included: builds and migration runners need them
+          npm run build --if-present
+          if [ -n "$MIGRATE_SCRIPT" ]; then npm run "$MIGRATE_SCRIPT"; fi
+
+          if pm2 describe "$PM2_NAME" > /dev/null 2>&1; then
+            pm2 reload "$PM2_NAME" --update-env
+          else
+            pm2 start npm --name "$PM2_NAME" -- run "$START_SCRIPT"
+          fi
+          pm2 save
+
+          [ -n "$HEALTH_PATH" ] || exit 0
+          PORT=$(grep -E '^PORT=' .env 2>/dev/null | cut -d= -f2 | tr -d '[:space:]' || true)
+          PORT=${PORT:-3000}
+          for attempt in $(seq 1 20); do
+            if curl -fsS "http://localhost:$PORT$HEALTH_PATH" > /dev/null; then
+              echo "Deployed and healthy on port $PORT."; exit 0
+            fi
+            sleep 2
+          done
+          echo "Health check failed after deploy; recent logs:" >&2
+          pm2 logs "$PM2_NAME" --lines 50 --nostream >&2 || true
+          exit 1
+          REMOTE
+          ARGS=$(printf '%q ' "$APP_DIR" "$PM2_NAME" "$START_SCRIPT" "$MIGRATE_SCRIPT" "$HEALTH_PATH")
+          ssh -i ~/.ssh/deploy_key "$TARGET" "bash -s -- $ARGS" < "$RUNNER_TEMP/remote.sh"
+
+      - name: Create GitHub Release
+        if: inputs.tag-prefix != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag-prefix }}${{ github.run_number }}
+        run: gh release create "$TAG" --target "$GITHUB_SHA" --title "$TAG" --generate-notes --latest
