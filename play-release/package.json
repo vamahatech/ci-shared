@@ -1,0 +1,7 @@
+{
+  "name": "play-release",
+  "private": true,
+  "type": "module",
+  "scripts": { "test": "node --test" },
+  "dependencies": { "googleapis": "183.0.0" }
+}

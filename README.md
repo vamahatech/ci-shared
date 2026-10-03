@@ -7,6 +7,7 @@ and triggers; the parts that are the same everywhere live here.
 |---|---|---|
 | Deploy a Node app to EC2 with pm2 | reusable workflow | `uses: vamahatech/ci-shared/.github/workflows/deploy-node-ec2.yml@v1` (job) |
 | Capacitor Android → Google Play | reusable workflow | `uses: vamahatech/ci-shared/.github/workflows/capacitor-android-play.yml@v1` (job) |
+| Play release track edit | composite action | `uses: vamahatech/ci-shared/play-release@v1` (step) |
 | Discord ✅/❌ message | composite action | `uses: vamahatech/ci-shared/discord-notify@v1` (step) |
 
 Inputs, secrets and a caller example are at the top of each file.
@@ -22,6 +23,37 @@ Optional inputs for Play release configuration:
 | `user-fraction` | string | `''` | Staged rollout fraction 0-1 (exclusive) when status is inProgress. Empty = full rollout. |
 
 Defaults keep the previous behaviour: full rollout, no release notes.
+
+### Play release track edit
+
+Promote an existing build between Play tracks, or raise / halt / complete a staged rollout. No build or upload.
+
+| Input | Type | Required | Description |
+|---|---|---|---|
+| `service-account-json` | string | yes | Play service account JSON key. |
+| `package-name` | string | yes | applicationId, e.g. com.scandukaan.app. |
+| `action` | string | yes | promote \| set-fraction \| halt \| complete. |
+| `from-track` | string | no | Source track for promote (alpha, beta, ...). |
+| `to-track` | string | yes | Track to change. |
+| `version-code` | string | no | Version code to promote. Empty = highest on from-track. |
+| `user-fraction` | string | no | 0-1. Staged fraction for promote / set-fraction. Empty on promote = full rollout. |
+
+Example job:
+
+```yaml
+  promote:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: vamahatech/ci-shared/play-release@v1
+        with:
+          service-account-json: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          package-name: com.example.app
+          action: promote
+          from-track: alpha
+          to-track: production
+          user-fraction: '0.1'
+```
 
 ## Rules
 

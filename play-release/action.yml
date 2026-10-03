@@ -1,0 +1,27 @@
+name: Play release track edit
+description: Promote an existing build between Play tracks, or raise / halt / complete a staged rollout. No build or upload.
+inputs:
+  service-account-json: { description: Play service account JSON key., required: true }
+  package-name: { description: applicationId, e.g. com.scandukaan.app., required: true }
+  action: { description: promote | set-fraction | halt | complete., required: true }
+  from-track: { description: Source track for promote (alpha, beta, ...)., required: false, default: '' }
+  to-track: { description: Track to change., required: true }
+  version-code: { description: Version code to promote. Empty = highest on from-track., required: false, default: '' }
+  user-fraction: { description: 0-1. Staged fraction for promote / set-fraction. Empty on promote = full rollout., required: false, default: '' }
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@v4
+      with: { node-version: '24' }
+    - shell: bash
+      run: npm ci --prefix "$GITHUB_ACTION_PATH" --omit=dev --no-audit --no-fund
+    - shell: bash
+      run: node "$GITHUB_ACTION_PATH/play-release.mjs"
+      env:
+        SERVICE_ACCOUNT_JSON: ${{ inputs.service-account-json }}
+        PACKAGE_NAME: ${{ inputs.package-name }}
+        ACTION: ${{ inputs.action }}
+        FROM_TRACK: ${{ inputs.from-track }}
+        TO_TRACK: ${{ inputs.to-track }}
+        VERSION_CODE: ${{ inputs.version-code }}
+        USER_FRACTION: ${{ inputs.user-fraction }}
