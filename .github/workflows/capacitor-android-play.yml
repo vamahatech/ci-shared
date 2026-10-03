@@ -50,6 +50,18 @@ on:
         description: Appended to the release tag v<version>.<run>, e.g. -beta. Non-empty marks it pre-release.
         type: string
         default: ''
+      whatsnew-dir:
+        description: Directory of whatsnew-<locale> files (≤500 chars each) uploaded as Play release notes. Empty = none.
+        type: string
+        default: ''
+      status:
+        description: Play release status - completed, inProgress (staged; needs user-fraction), draft or halted.
+        type: string
+        default: completed
+      user-fraction:
+        description: Staged rollout fraction 0-1 (exclusive) when status is inProgress. Empty = full rollout.
+        type: string
+        default: ''
     secrets:
       ANDROID_KEYSTORE_BASE64:
         required: true
@@ -155,7 +167,9 @@ jobs:
           packageName: ${{ inputs.package-name }}
           releaseFiles: android/app/build/outputs/bundle/release/app-release.aab
           track: ${{ inputs.track }}
-          status: completed
+          status: ${{ inputs.status }}
+          userFraction: ${{ inputs.user-fraction }}
+          whatsNewDirectory: ${{ inputs.whatsnew-dir }}
 
       - name: Create GitHub Release
         env:

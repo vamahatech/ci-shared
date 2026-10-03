@@ -11,6 +11,18 @@ and triggers; the parts that are the same everywhere live here.
 
 Inputs, secrets and a caller example are at the top of each file.
 
+### Capacitor Android → Google Play
+
+Optional inputs for Play release configuration:
+
+| Input | Type | Default | Description |
+|---|---|---|---|
+| `whatsnew-dir` | string | `''` | Directory of whatsnew-<locale> files (≤500 chars each) uploaded as Play release notes. Empty = none. |
+| `status` | string | `completed` | Play release status - completed, inProgress (staged; needs user-fraction), draft or halted. |
+| `user-fraction` | string | `''` | Staged rollout fraction 0-1 (exclusive) when status is inProgress. Empty = full rollout. |
+
+Defaults keep the previous behaviour: full rollout, no release notes.
+
 ## Rules
 
 - **No secrets, hostnames or project names in this repo.** Callers pass them in. (That is
