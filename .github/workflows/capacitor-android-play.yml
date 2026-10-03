@@ -59,7 +59,7 @@ on:
         type: string
         default: completed
       user-fraction:
-        description: Staged rollout fraction 0-1 (exclusive) when status is inProgress. Empty = full rollout.
+        description: Staged rollout fraction 0-1 (exclusive). Required when status is inProgress; leave empty otherwise.
         type: string
         default: ''
     secrets:

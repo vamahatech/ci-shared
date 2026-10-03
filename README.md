@@ -20,7 +20,7 @@ Optional inputs for Play release configuration:
 |---|---|---|---|
 | `whatsnew-dir` | string | `''` | Directory of whatsnew-<locale> files (≤500 chars each) uploaded as Play release notes. Empty = none. |
 | `status` | string | `completed` | Play release status - completed, inProgress (staged; needs user-fraction), draft or halted. |
-| `user-fraction` | string | `''` | Staged rollout fraction 0-1 (exclusive) when status is inProgress. Empty = full rollout. |
+| `user-fraction` | string | `''` | Staged rollout fraction 0-1 (exclusive). Required when status is inProgress; leave empty otherwise. |
 
 Defaults keep the previous behaviour: full rollout, no release notes.
 
